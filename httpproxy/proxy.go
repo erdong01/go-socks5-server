@@ -1,21 +1,29 @@
 package httpproxy
 
 import (
-	"fmt"
+	"bufio"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"time"
+)
+
+// 超时设置
+const (
+	dialTimeout = 5 * time.Second
+	rwTimeout   = 10 * time.Second
 )
 
 func handleTunneling(w http.ResponseWriter, r *http.Request) {
-	destConn, err := net.Dial("tcp", r.Host)
+	destConn, err := net.DialTimeout("tcp", r.Host, dialTimeout)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	defer destConn.Close()
 
+	w.WriteHeader(http.StatusOK)
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
@@ -24,31 +32,36 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
 	}
+	defer clientConn.Close()
 
 	go transfer(destConn, clientConn)
 	go transfer(clientConn, destConn)
 }
-
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
 	defer destination.Close()
 	defer source.Close()
-	buf := make([]byte, 64*1024) // 64KB buffer
+
+	reader := bufio.NewReader(source)
+	writer := bufio.NewWriter(destination)
+
+	buf := make([]byte, 64*1024)
 	for {
-		n, err := source.Read(buf)
+		n, err := reader.Read(buf)
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("Error reading from source:", err)
+				log.Printf("Error reading from source: %v", err)
 			}
 			return
 		}
-		if n > 0 {
-			_, writeErr := destination.Write(buf[:n])
-			if writeErr != nil {
-				fmt.Println("Error writing to destination:", writeErr)
-				return
-			}
+
+		_, err = writer.Write(buf[:n])
+		if err != nil {
+			log.Printf("Error writing to destination: %v", err)
+			return
 		}
+		writer.Flush()
 	}
 }
 
@@ -84,7 +97,6 @@ func StartProxy() {
 			}
 		}),
 	}
-
 	log.Printf("Starting http/https proxy server on %s", server.Addr)
 	log.Fatal(server.ListenAndServe())
 }
