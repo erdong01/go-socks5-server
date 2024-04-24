@@ -35,11 +35,18 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 	wg.Wait() // Wait for both transfer goroutines to finish
 }
 
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 32*1024) // 使用32KB的缓冲区
+	},
+}
+
 func transfer(destination io.WriteCloser, source io.ReadCloser, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer destination.Close()
 	defer source.Close()
-	buf := make([]byte, 32*1024) // Use consistent 32KB buffer as mentioned
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
 	io.CopyBuffer(destination, source, buf)
 }
 
