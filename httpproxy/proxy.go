@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 )
 
 func handleTunneling(w http.ResponseWriter, r *http.Request) {
@@ -25,11 +26,20 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 	}
 
-	go transfer(destConn, clientConn)
-	go transfer(clientConn, destConn)
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
-		defer destConn.Close()
-		defer clientConn.Close()
+		transfer(destConn, clientConn)
+		wg.Done()
+	}()
+	go func() {
+		transfer(clientConn, destConn)
+		wg.Done()
+	}()
+	go func() {
+		wg.Wait()
+		destConn.Close()
+		clientConn.Close()
 	}()
 }
 
