@@ -25,19 +25,15 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 	}
-	go func() {
-		defer destConn.Close()
-		defer clientConn.Close()
 
-		defer clientConn.Close()
-		defer destConn.Close()
-		transfer(destConn, clientConn)
-		transfer(clientConn, destConn)
-	}()
+	go transfer(destConn, clientConn)
+	go transfer(clientConn, destConn)
 }
 
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
-	buf := make([]byte, 128*1024) // 1MB buffer
+	defer destination.Close()
+	defer source.Close()
+	buf := make([]byte, 64*1024) // 1MB buffer
 	_, err := io.CopyBuffer(destination, source, buf)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && (netErr.Timeout() || strings.Contains(netErr.Error(), "use of closed network connection")) {
