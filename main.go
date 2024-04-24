@@ -1,11 +1,14 @@
 package main
 
 import (
-	"github.com/gcslaoli/go-socks5-server/httpproxy"
+	"log"
+	"net/http"
+
+	"github.com/elazarl/goproxy"
 )
 
 func main() {
-	// start http proxy
-	httpproxy.StartProxy()
-
+	proxy := goproxy.NewProxyHttpServer()
+	proxy.Verbose = true
+	log.Fatal(http.ListenAndServe(":8080", proxy))
 }
