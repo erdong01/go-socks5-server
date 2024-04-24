@@ -1,5 +1,5 @@
 # 第一阶段：构建应用程序
-FROM golang:1.17-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
