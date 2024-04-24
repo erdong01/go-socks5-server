@@ -32,7 +32,12 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
 	defer destination.Close()
 	defer source.Close()
-	io.Copy(destination, source)
+
+	buf := make([]byte, 32*1024) // 32KB buffer
+	_, err := io.CopyBuffer(destination, source, buf)
+	if err != nil {
+		log.Printf("Error in transfer: %v", err)
+	}
 }
 
 func handleHTTP(w http.ResponseWriter, req *http.Request) {
