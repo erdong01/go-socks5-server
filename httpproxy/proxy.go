@@ -1,22 +1,18 @@
 package httpproxy
 
 import (
-	"bufio"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
-	"time"
-)
-
-// 超时设置
-const (
-	dialTimeout = 5 * time.Second
-	rwTimeout   = 10 * time.Second
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 func handleTunneling(w http.ResponseWriter, r *http.Request) {
-	destConn, err := net.DialTimeout("tcp", r.Host, dialTimeout)
+	destConn, err := net.Dial("tcp", r.Host)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -39,29 +35,26 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 	go transfer(destConn, clientConn)
 	go transfer(clientConn, destConn)
 }
+
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
 	defer destination.Close()
 	defer source.Close()
-
-	reader := bufio.NewReader(source)
-	writer := bufio.NewWriter(destination)
-
-	buf := make([]byte, 64*1024)
+	buf := make([]byte, 32*1024) // 32KB buffer
 	for {
-		n, err := reader.Read(buf)
+		n, err := source.Read(buf)
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("Error reading from source: %v", err)
+				fmt.Println("Error reading from source:", err)
 			}
 			return
 		}
-
-		_, err = writer.Write(buf[:n])
-		if err != nil {
-			log.Printf("Error writing to destination: %v", err)
-			return
+		if n > 0 {
+			_, err = destination.Write(buf[:n])
+			if err != nil {
+				fmt.Println("Error writing to destination:", err)
+				return
+			}
 		}
-		writer.Flush()
 	}
 }
 
@@ -97,6 +90,19 @@ func StartProxy() {
 			}
 		}),
 	}
+
+	// Setting up signal capturing
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-stop
+		log.Println("Shutting down proxy server...")
+		server.Close()
+	}()
+
 	log.Printf("Starting http/https proxy server on %s", server.Addr)
-	log.Fatal(server.ListenAndServe())
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
