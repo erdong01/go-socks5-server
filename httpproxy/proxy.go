@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"sync"
+	"strings"
 )
 
 func handleTunneling(w http.ResponseWriter, r *http.Request) {
@@ -26,27 +26,20 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		transfer(destConn, clientConn)
-		wg.Done()
-	}()
-	go func() {
-		transfer(clientConn, destConn)
-		wg.Done()
-	}()
-	go func() {
-		wg.Wait()
-		destConn.Close()
-		clientConn.Close()
-	}()
+	go transfer(destConn, clientConn)
+	go transfer(clientConn, destConn)
 }
 
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
-	buf := make([]byte, 1024*1024) // 32KB buffer
+	defer destination.Close()
+	defer source.Close()
+	buf := make([]byte, 128*1024) // 1MB buffer
 	_, err := io.CopyBuffer(destination, source, buf)
 	if err != nil {
+		if netErr, ok := err.(net.Error); ok && (netErr.Timeout() || strings.Contains(netErr.Error(), "use of closed network connection")) {
+			// Ignore timeout and use of closed network connection errors
+			return
+		}
 		log.Printf("Error in transfer: %v", err)
 	}
 }
