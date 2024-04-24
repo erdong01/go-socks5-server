@@ -4,7 +4,8 @@ FROM golang:1.17-alpine AS builder
 WORKDIR /app
 
 COPY . .
-
+RUN go env  -w GOPROXY=https://goproxy.io,direct
+RUN go mod download
 RUN go build -o main .
 
 
