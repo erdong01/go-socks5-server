@@ -75,7 +75,7 @@ func copyHeader(dst, src http.Header) {
 
 func StartProxy() {
 	server := &http.Server{
-		Addr: ":3128",
+		Addr: ":31280",
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodConnect {
 				handleTunneling(w, r)
