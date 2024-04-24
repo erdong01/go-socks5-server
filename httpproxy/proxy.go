@@ -33,7 +33,7 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
 	defer destination.Close()
 	defer source.Close()
-	buf := make([]byte, 64*1024) // 1MB buffer
+	buf := make([]byte, 32*1024) // 1MB buffer
 	_, err := io.CopyBuffer(destination, source, buf)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && (netErr.Timeout() || strings.Contains(netErr.Error(), "use of closed network connection")) {
