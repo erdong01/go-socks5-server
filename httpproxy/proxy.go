@@ -33,19 +33,21 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
 	defer destination.Close()
 	defer source.Close()
-	buf := make([]byte, 128*1024) // 32KB buffer
+	buf := make([]byte, 64*1024) // 64KB buffer
 	for {
 		n, err := source.Read(buf)
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("read error:", err)
+				fmt.Println("Error reading from source:", err)
 			}
-			break
+			return
 		}
-		_, err = destination.Write(buf[:n])
-		if err != nil {
-			fmt.Println("write error:", err)
-			break
+		if n > 0 {
+			_, writeErr := destination.Write(buf[:n])
+			if writeErr != nil {
+				fmt.Println("Error writing to destination:", writeErr)
+				return
+			}
 		}
 	}
 }
