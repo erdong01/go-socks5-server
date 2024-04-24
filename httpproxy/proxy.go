@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sync"
 )
 
 func handleTunneling(w http.ResponseWriter, r *http.Request) {
@@ -23,18 +24,23 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		destConn.Close() // Ensure destination connection is closed on error
+		return
 	}
 
-	go transfer(destConn, clientConn)
-	go transfer(clientConn, destConn)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go transfer(destConn, clientConn, &wg)
+	go transfer(clientConn, destConn, &wg)
+	wg.Wait() // Wait for both transfer goroutines to finish
 }
 
-func transfer(destination io.WriteCloser, source io.ReadCloser) {
+func transfer(destination io.WriteCloser, source io.ReadCloser, wg *sync.WaitGroup) {
+	defer wg.Done()
 	defer destination.Close()
 	defer source.Close()
-	buf := make([]byte, 64*1024) // 32KB buffer
+	buf := make([]byte, 32*1024) // Use consistent 32KB buffer as mentioned
 	io.CopyBuffer(destination, source, buf)
-
 }
 
 func handleHTTP(w http.ResponseWriter, req *http.Request) {
