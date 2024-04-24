@@ -18,9 +18,9 @@ func main() {
 	}
 
 	// Create SOCKS5 proxy on localhost port 8000
-	addr := ":1080"
+	addr := ":1181"
 	log.Printf("Starting socks5 proxy server on %s", addr)
-	if err := server.ListenAndServe("tcp", ":1080"); err != nil {
+	if err := server.ListenAndServe("tcp", addr); err != nil {
 		panic(err)
 	}
 }
