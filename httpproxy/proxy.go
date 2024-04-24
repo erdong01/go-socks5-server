@@ -14,6 +14,8 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	defer destConn.Close() // 确保destConn被关闭
+
 	w.WriteHeader(http.StatusOK)
 
 	hijacker, ok := w.(http.Hijacker)
@@ -24,15 +26,15 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		destConn.Close() // Ensure destination connection is closed on error
 		return
 	}
+	defer clientConn.Close() // 确保clientConn被关闭
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go transfer(destConn, clientConn, &wg)
 	go transfer(clientConn, destConn, &wg)
-	wg.Wait() // Wait for both transfer goroutines to finish
+	wg.Wait() // 等待所有转移完成
 }
 
 var bufferPool = sync.Pool{
