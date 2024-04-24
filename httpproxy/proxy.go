@@ -1,6 +1,7 @@
 package httpproxy
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -33,9 +34,11 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 }
 
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
-
 	buf := make([]byte, 64*1024) // 32KB buffer
-	io.CopyBuffer(destination, source, buf)
+	_, err := io.CopyBuffer(destination, source, buf)
+	if err != nil {
+		fmt.Println("transfer err:", err)
+	}
 }
 
 func handleHTTP(w http.ResponseWriter, req *http.Request) {
