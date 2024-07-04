@@ -39,7 +39,8 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 
 var bufferPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 512*1024) // 使用32KB的缓冲区
+		b := make([]byte, 128*1024) // 使用32KB的缓冲区
+		return &b
 	},
 }
 
@@ -48,7 +49,7 @@ func transfer(destination io.WriteCloser, source io.ReadCloser, wg *sync.WaitGro
 	defer destination.Close()
 	defer source.Close()
 	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf)
+	defer bufferPool.Put(&buf) // Reset buffer before putting it back
 	io.CopyBuffer(destination, source, buf)
 }
 
