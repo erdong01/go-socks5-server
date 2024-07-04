@@ -48,7 +48,7 @@ func transfer(destination io.WriteCloser, source io.ReadCloser, wg *sync.WaitGro
 	defer destination.Close()
 	defer source.Close()
 	buf := bufferPool.Get().([]byte)
-	defer bufferPool.Put(buf[:0])
+	defer bufferPool.Put(buf)
 	io.CopyBuffer(destination, source, buf)
 }
 
