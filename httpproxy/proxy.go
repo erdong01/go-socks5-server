@@ -38,9 +38,8 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 }
 
 var bufferPool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 128*1024) // 使用32KB的缓冲区
-		return &b
+	New: func() any {
+		return make([]byte, 128*1024)
 	},
 }
 
