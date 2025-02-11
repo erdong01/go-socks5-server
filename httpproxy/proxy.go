@@ -1,11 +1,13 @@
 package httpproxy
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 func handleTunneling(w http.ResponseWriter, r *http.Request) {
@@ -39,30 +41,56 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 
 var bufferPool = sync.Pool{
 	New: func() any {
-		return make([]byte, 128*1024)
+		b := make([]byte, 64*1024)
+		return &b
 	},
 }
 
 func transfer(destination io.WriteCloser, source io.ReadCloser, wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer destination.Close()
-	defer source.Close()
-	buf := bufferPool.Get().([]byte)
+	buf := bufferPool.Get().(*[]byte)
 	defer bufferPool.Put(buf)
-	io.CopyBuffer(destination, source, buf)
+	_, err := io.CopyBuffer(destination, source, *buf)
+	if err != nil {
+		// 区分不同的错误类型，例如超时、连接断开等
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			log.Printf("Transfer timeout: %v", err)
+		} else {
+			log.Printf("Transfer error: %v", err)
+		}
+	}
 }
 
 func handleHTTP(w http.ResponseWriter, req *http.Request) {
-	resp, err := http.DefaultTransport.RoundTrip(req)
+	// 使用自定义的 Transport，设置超时等参数
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment, // 使用环境变量中的代理
+		DialContext:           (&net.Dialer{Timeout: 300 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   120 * time.Second,
+		ResponseHeaderTimeout: 120 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       180 * time.Second,
+	}
+
+	resp, err := transport.RoundTrip(req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		http.Error(w, fmt.Sprintf("Failed to send request to destination: %v", err), http.StatusServiceUnavailable)
 		return
 	}
 	defer resp.Body.Close()
 
+	// 复制响应头
 	copyHeader(w.Header(), resp.Header)
+
+	// 设置状态码
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+
+	// 使用 io.Copy 复制响应体，并处理错误
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		log.Printf("Error copying response body: %v", err)
+	}
 }
 
 func copyHeader(dst, src http.Header) {
@@ -83,8 +111,13 @@ func StartProxy() {
 				handleHTTP(w, r)
 			}
 		}),
+		ReadTimeout:  300 * time.Second, // 设置读取超时
+		WriteTimeout: 300 * time.Second, // 设置写入超时
+		IdleTimeout:  600 * time.Second, // 设置空闲超时
 	}
-
 	log.Printf("Starting http/https proxy server on %s", server.Addr)
-	log.Fatal(server.ListenAndServe())
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+		// 忽略 ErrServerClosed 错误，这是正常的关闭行为
+		log.Fatalf("Proxy server error: %v", err)
+	}
 }
