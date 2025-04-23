@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -39,38 +40,32 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 	wg.Wait() // 等待所有转移完成
 }
 
-var bufferPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 64*1024)
-		return &b
-	},
-}
-
 func transfer(destination io.WriteCloser, source io.ReadCloser, wg *sync.WaitGroup) {
 	defer wg.Done()
-	buf := bufferPool.Get().(*[]byte)
-	defer bufferPool.Put(buf)
-	_, err := io.CopyBuffer(destination, source, *buf)
-	if err != nil {
-		// 区分不同的错误类型，例如超时、连接断开等
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			log.Printf("Transfer timeout: %v", err)
-		} else {
-			log.Printf("Transfer error: %v", err)
-		}
-	}
+	// 或者，强制使用 buffer
+	_, _ = io.Copy(destination, source)
+}
+
+var transport = &http.Transport{
+	Proxy:                 http.ProxyFromEnvironment, // 使用环境变量中的代理
+	DialContext:           (&net.Dialer{Timeout: 60 * time.Second}).DialContext,
+	TLSHandshakeTimeout:   30 * time.Second,
+	ResponseHeaderTimeout: 300 * time.Second,
+	ExpectContinueTimeout: 300 * time.Second,
+	MaxIdleConns:          32,
+	IdleConnTimeout:       90 * time.Second,
 }
 
 func handleHTTP(w http.ResponseWriter, req *http.Request) {
 	// 使用自定义的 Transport，设置超时等参数
-	transport := &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment, // 使用环境变量中的代理
-		DialContext:           (&net.Dialer{Timeout: 300 * time.Second}).DialContext,
-		TLSHandshakeTimeout:   120 * time.Second,
-		ResponseHeaderTimeout: 120 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       180 * time.Second,
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
+	// 添加X-Forwarded-For头
+	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		if prior, ok := req.Header["X-Forwarded-For"]; ok {
+			clientIP = strings.Join(prior, ", ") + ", " + clientIP
+		}
+		req.Header.Set("X-Forwarded-For", clientIP)
 	}
 
 	resp, err := transport.RoundTrip(req)
@@ -111,9 +106,8 @@ func StartProxy() {
 				handleHTTP(w, r)
 			}
 		}),
-		ReadTimeout:  300 * time.Second, // 设置读取超时
-		WriteTimeout: 300 * time.Second, // 设置写入超时
-		IdleTimeout:  600 * time.Second, // 设置空闲超时
+		ReadTimeout:  360 * time.Second, // 设置读取超时
+		WriteTimeout: 360 * time.Second, // 设置写入超时
 	}
 	log.Printf("Starting http/https proxy server on %s", server.Addr)
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {

@@ -1,12 +1,12 @@
 # 第一阶段：构建应用程序
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
 COPY . .
 RUN go env  -w GOPROXY=https://goproxy.io,direct
 RUN go mod download
-RUN go build -o main .
+RUN GOOS=linux GOARCH=amd64 go build -o main .
 
 
 # 第二阶段：构建最终镜像
