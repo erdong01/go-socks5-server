@@ -18,31 +18,41 @@ func handleTunneling(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	defer destConn.Close() // 确保destConn被关闭
 
 	w.WriteHeader(http.StatusOK)
 
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
+		destConn.Close() // 确保destConn被关闭
 		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
 		return
 	}
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
+		destConn.Close() // 确保destConn被关闭
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	defer clientConn.Close() // 确保clientConn被关闭
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go transfer(destConn, clientConn, &wg)
-	go transfer(clientConn, destConn, &wg)
-	wg.Wait() // 等待所有转移完成
+	go func() {
+		defer destConn.Close()   // 确保destConn被关闭
+		defer clientConn.Close() // 确保clientConn被关闭
+		var wg sync.WaitGroup
+		wg.Add(2) // 需要等待两个 transfer 操作
+		go func() {
+			defer wg.Done() // 通知 WaitGroup 此 goroutine 完成
+			// 从 clientConn 复制到 destConn
+			transfer(destConn, clientConn)
+		}()
+		go func() {
+			defer wg.Done() // 通知 WaitGroup 此 goroutine 完成
+			// 从 destConn 复制到 clientConn
+			transfer(clientConn, destConn)
+		}()
+		wg.Wait() // 等待两个 transfer goroutine 都完成
+	}()
 }
 
-func transfer(destination io.WriteCloser, source io.ReadCloser, wg *sync.WaitGroup) {
-	defer wg.Done()
+func transfer(destination io.WriteCloser, source io.ReadCloser) {
 	// 或者，强制使用 buffer
 	_, _ = io.Copy(destination, source)
 	if tcpConn, ok := destination.(interface{ CloseWrite() error }); ok {
