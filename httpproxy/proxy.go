@@ -12,7 +12,8 @@ import (
 )
 
 func handleTunneling(w http.ResponseWriter, r *http.Request) {
-	destConn, err := net.Dial("tcp", r.Host)
+	dialer := net.Dialer{Timeout: 30 * time.Second} // 例如30秒超时
+	destConn, err := dialer.Dial("tcp", r.Host)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -44,6 +45,9 @@ func transfer(destination io.WriteCloser, source io.ReadCloser, wg *sync.WaitGro
 	defer wg.Done()
 	// 或者，强制使用 buffer
 	_, _ = io.Copy(destination, source)
+	if tcpConn, ok := destination.(interface{ CloseWrite() error }); ok {
+		_ = tcpConn.CloseWrite()
+	}
 }
 
 var transport = &http.Transport{
@@ -52,13 +56,12 @@ var transport = &http.Transport{
 	TLSHandshakeTimeout:   30 * time.Second,
 	ResponseHeaderTimeout: 300 * time.Second,
 	ExpectContinueTimeout: 300 * time.Second,
-	MaxIdleConns:          32,
-	IdleConnTimeout:       90 * time.Second,
+	MaxIdleConns:          24,
+	IdleConnTimeout:       60 * time.Second,
 }
 
 func handleHTTP(w http.ResponseWriter, req *http.Request) {
 	// 使用自定义的 Transport，设置超时等参数
-
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
 	// 添加X-Forwarded-For头
 	if clientIP, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
